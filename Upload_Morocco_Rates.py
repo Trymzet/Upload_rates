@@ -26,7 +26,7 @@ cur_list = ["AED", "CAD", "CHF", "DZD", "EUR", "GBP", "LYD", "SAR", "SEK", "TND"
 rates_MA = rates[(rates.iloc[:,0] == "CBSEL") & (rates.iloc[:,2] == "MAD") & (rates.iloc[:,3].isin(cur_list))]
 
 # note that rates are normalized -- divide by the normalizer in order to get the actual rate
-rates_MA.iloc[:,7] = rates_MA.iloc[:,7].div(rates_MA.iloc[:,8], axis=0)
+rates_MA.iloc[:,7] = rates_MA.iloc[:,7].div(rates_MA.iloc[:,8])
 
 # get rid of useless columns and reset index
 useless_cols = [x for x in range(rates_MA.shape[1]) if x not in [2, 3, 4, 7]]
@@ -50,6 +50,11 @@ header = pd.DataFrame([["CURRENCY_RATES", "COMPANY_ID=HP", "SOURCE=BOM-MAD", ""]
 with pd.ExcelWriter(title, engine="openpyxl") as writer:
     header.to_excel(writer, index=False, header=False)
     rates_MA.to_excel(writer, index=False, header=False, startrow=2)
+
+# TODO: change the date column's format from General to Date, use(?):
+# cell.number_format = "MM/DD/YY"       //use US locale?
+# or cell.number_format = "Date" ?
+# look here: http://openpyxl.readthedocs.io/en/default/_modules/openpyxl/styles/numbers.html
 
 # cleanup
 os.remove("VATSPOTR.txt")
