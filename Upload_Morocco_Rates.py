@@ -42,7 +42,7 @@ print(rates_MA)
 # file path + name of the file
 title = r"..\Upload_rates\Morocco Rates\MOROCCO_RATES\MOROCCO_RATES_" + str(effective_date)[:-9] + ".xlsx"
 
-# create the header
+# create the header as a separate DF; could use one DataFrame once MultiIndex columns are better supported
 header = pd.DataFrame([["CURRENCY_RATES", "COMPANY_ID=HP", "SOURCE=BOM-MAD", ""],
                        ["BASE_CURRENCY", "FOREIGN_CURRENCY", "EFFECTIVE_DATE", "RATE"]])
 
@@ -51,10 +51,18 @@ with pd.ExcelWriter(title, engine="openpyxl") as writer:
     header.to_excel(writer, index=False, header=False)
     rates_MA.to_excel(writer, index=False, header=False, startrow=2)
 
-# TODO: change the date column's format from General to Date, use(?):
-# cell.number_format = "MM/DD/YY"       //use US locale?
-# or cell.number_format = "Date" ?
-# look here: http://openpyxl.readthedocs.io/en/default/_modules/openpyxl/styles/numbers.html
+# format the date as the bare int format is treated as General, and we need it to be an Excel Date type
+wb = openpyxl.load_workbook(title)
+ws = wb.active
+for row in ws:
+    if "A" not in str((row[2]).value):  # skip header rows, picked "A" because column C headers have it :)
+        row[2].number_format = "mm-dd-yy"
+wb.save(title)
+
+# TODO: create a settings file with the destination folder for the output file
+# if the directory does not exist - create it
+# beautify the final date converting if statement - maybe isinstance(row[2].value, basestring)?
+# refactor
 
 # cleanup
 os.remove("VATSPOTR.txt")
