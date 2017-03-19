@@ -20,27 +20,27 @@ myzip.extractall()
 myzip.close()
 os.remove("VATSPOTR.zip")
 
-# create a DataFrame
+# read the txt to a DataFrame and leave only the currencies in scope
 rates = pd.read_csv("VATSPOTR.txt", sep="\t", header=1, index_col=False, parse_dates=[4])
-cur_list = ["AED", "CAD", "CHF", "DZD", "EUR", "GBP", "LYD", "SAR", "SEK", "TND", "USD"] # our scope
-rates_MA = rates[(rates.iloc[:,0] == "CBSEL") & (rates.iloc[:,2] == "MAD") & (rates.iloc[:,3].isin(cur_list))]
+cur_in_scope = ["AED", "CAD", "CHF", "DZD", "EUR", "GBP", "LYD", "SAR", "SEK", "TND", "USD"]
+rates_MA = rates[(rates.iloc[:,0] == "CBSEL") & (rates.iloc[:,2] == "MAD") & (rates.iloc[:,3].isin(cur_in_scope))]
 
-# note that rates are normalized -- divide by the normalizer in order to get the actual rate
+# note that rates in the raw file are normalized -- divide by the normalizer in order to get the actual rate
 rates_MA.iloc[:,7] = rates_MA.iloc[:,7].div(rates_MA.iloc[:,8])
 
-# get rid of useless columns and reset index
-useless_cols = [x for x in range(rates_MA.shape[1]) if x not in [2, 3, 4, 7]]
-rates_MA.drop(rates_MA[useless_cols], axis=1, inplace=True) #rates_MA.drop(rates_MA.columns[useless_cols], axis=1, inplace=True)
+# get rid of useless columns
+output_columns = [2, 3, 4, 7]
+useless_columns = rates_MA[[x for x in range(rates_MA.shape[1]) if x not in output_columns]]
+rates_MA.drop(useless_columns, axis=1, inplace=True)
 
 # extract the rates' effective date for output file and the file's name -- must use Excel's number format
-date = rates_MA.iloc[0,2]
-excel_date_format = (date - datetime.datetime(1899, 12, 31)).days + 1
-#rates_MA.iloc[:,2] = rates_MA.iloc[:,2].dt.strftime("%d-%m-%Y") #"%m/%d/%Y"
+effective_date = rates_MA.iloc[0,2]
+excel_date_format = (effective_date - datetime.datetime(1899, 12, 31)).days + 1
 rates_MA.iloc[:,2] = np.array(excel_date_format)
 print(rates_MA)
 
 # file path + name of the file
-title = r"..\Upload_rates\Morocco Rates\MOROCCO_RATES\MOROCCO_RATES_" + str(date)[:-9] + ".xlsx"
+title = r"..\Upload_rates\Morocco Rates\MOROCCO_RATES\MOROCCO_RATES_" + str(effective_date)[:-9] + ".xlsx"
 
 # create the header
 header = pd.DataFrame([["CURRENCY_RATES", "COMPANY_ID=HP", "SOURCE=BOM-MAD", ""],
