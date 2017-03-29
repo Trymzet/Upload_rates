@@ -1,68 +1,98 @@
 # Author - Michal Zawadzki, michalmzawadzki@gmail.com. Updates/modifications highly encouraged (infoanarchism!). :)
 
-import openpyxl, os, zipfile, urllib.request, pandas as pd, sys, numpy as np, datetime
+import openpyxl, zipfile, urllib.request, pandas as pd, datetime, xml.etree.ElementTree as ET
+from os import remove
+from numpy import array
+from time import sleep
+from sys import exit
 pd.options.mode.chained_assignment = None
 
-# clean old file, download the raw rates file
-try:
-    os.remove("VATSPOTR.txt")
-except FileNotFoundError:
-    pass
-try:
-    print("Downloading rates...")
-    urllib.request.urlretrieve("http://polaris-pro-ent.houston.hpe.com:8080/VATSPOTR.zip", "VATSPOTR.zip")
-except:
-    print(r"Oops! Cannot retrieve MA rates from http://polaris-pro-ent.houston.hpe.com:8080/VATSPOTR.zip")
-    sys.exit(1)
 
-myzip = zipfile.ZipFile("VATSPOTR.zip", "r")
-myzip.extractall()
-myzip.close()
-os.remove("VATSPOTR.zip")
+# courtesy of Austin Taylor, http://www.austintaylor.io/ -- adapted for our use
+def xml2df(root):
+    all_records = []
+    headers = []
+    for i, child in enumerate(root):
+        record = []
+        for subchild in child:
+            record.append(subchild.text)
+            if subchild.tag not in headers:
+                headers.append(subchild.tag)
+        all_records.append(record)
+    return pd.DataFrame(all_records, columns=headers)
 
-# read the txt to a DataFrame and leave only the currencies in scope
-rates = pd.read_csv("VATSPOTR.txt", sep="\t", header=1, index_col=False, parse_dates=[4])
-cur_in_scope = ["AED", "CAD", "CHF", "DZD", "EUR", "GBP", "LYD", "SAR", "SEK", "TND", "USD"]
-rates_MA = rates[(rates.iloc[:,0] == "CBSEL") & (rates.iloc[:,2] == "MAD") & (rates.iloc[:,3].isin(cur_in_scope))]
-
-# note that rates in the raw file are normalized -- divide by the normalizer in order to get the actual rate
-rates_MA.iloc[:,7] = rates_MA.iloc[:,7].div(rates_MA.iloc[:,8])
-
-# get rid of useless columns
-output_columns = [2, 3, 4, 7]
-useless_columns = rates_MA[[x for x in range(rates_MA.shape[1]) if x not in output_columns]]
-rates_MA.drop(useless_columns, axis=1, inplace=True)
-
-# extract the rates' effective date for output file and the file's name -- must use Excel's number format
-effective_date = rates_MA.iloc[0,2]
-excel_date_format = (effective_date - datetime.datetime(1899, 12, 31)).days + 1
-rates_MA.iloc[:,2] = np.array(excel_date_format)
-print(rates_MA)
-
-# file path + name of the file
-title = r"..\Upload_rates\Morocco Rates\MOROCCO_RATES\MOROCCO_RATES_" + str(effective_date)[:-9] + ".xlsx"
-
-# create the header as a separate DF; could use one DataFrame once MultiIndex columns are better supported
-header = pd.DataFrame([["CURRENCY_RATES", "COMPANY_ID=HP", "SOURCE=BOM-MAD", ""],
-                       ["BASE_CURRENCY", "FOREIGN_CURRENCY", "EFFECTIVE_DATE", "RATE"]])
-
-# create the final xlsx
-with pd.ExcelWriter(title, engine="openpyxl") as writer:
-    header.to_excel(writer, index=False, header=False)
-    rates_MA.to_excel(writer, index=False, header=False, startrow=2)
 
 # format the date as the bare int format is treated as General, and we need it to be an Excel Date type
-wb = openpyxl.load_workbook(title)
-ws = wb.active
-for row in ws:
-    if "A" not in str((row[2]).value):  # skip header rows, picked "A" because column C headers have it :)
-        row[2].number_format = "mm-dd-yy"
-wb.save(title)
+# use openpyxl's builtin number formats for date_format
+def format_date_to_excel(excel_file_location, date_format="mm-dd-yy"):
+    wb = openpyxl.load_workbook(excel_file_location)
+    ws = wb.active
+    for row in ws:
+        if "A" not in str((row[2]).value):  # skip header rows, picked "A" because column C headers have it :)
+            row[2].number_format = date_format
+    wb.save(excel_file_location)
 
-# TODO: create a settings file with the destination folder for the output file
-# if the directory does not exist - create it
-# beautify the final date converting if statement - maybe isinstance(row[2].value, basestring)?
-# refactor
 
-# cleanup
-os.remove("VATSPOTR.txt")
+def prepare_morocco():
+    # clean old file, download the raw rates file
+    try:
+        remove("VATSPOTR.txt")
+    except FileNotFoundError:
+        pass
+    try:
+        print("Downloading rates...")
+        urllib.request.urlretrieve("http://polaris-pro-ent.houston.hpe.com:8080/VATSPOTR.zip", "VATSPOTR.zip")
+    except:
+        print(r"Oops! Cannot retrieve MA rates from http://polaris-pro-ent.houston.hpe.com:8080/VATSPOTR.zip")
+        sleep(5)
+        exit(1)
+
+    myzip = zipfile.ZipFile("VATSPOTR.zip", "r")
+    myzip.extractall()
+    myzip.close()
+    remove("VATSPOTR.zip")
+
+# parse the XML file and store it as a string
+# genrealize and refactor later on :p
+TR_rates_XML = urllib.request.urlopen("http://www.tcmb.gov.tr/kurlar/today.xml")
+TR_rates_string = TR_rates_XML.read()
+
+# create an ElementTree to easily access CurrencyCodes
+TR_etree = ET.fromstring(TR_rates_string)
+
+# retrieve a list of Currency codes (scope: the first 12)
+TR_number_of_rates = 12
+TR_cur_in_scope = pd.Series([child.attrib["CurrencyCode"] for child in TR_etree[:TR_number_of_rates]])
+
+# convert the ElementTree to a DataFrame for easy manipulation and Excel conversion
+TR_xml_df = xml2df(TR_etree)
+
+# retrieve and format the dates -- TODO: check whether Tarih == Date
+TR_effective_dates = pd.to_datetime(pd.Series([TR_etree.attrib["Date"] for i in range(TR_number_of_rates)]))
+TR_effective_date = TR_effective_dates[0]
+TR_excel_date_format = (TR_effective_date - datetime.datetime(1899, 12, 31)).days + 1
+
+print(TR_excel_date_format)
+
+TR_base_cur = pd.Series(["TRY" for _ in range(TR_number_of_rates)])
+TR_rates = TR_xml_df.iloc[:TR_number_of_rates,4].astype(float)
+
+# use the real values of the rates
+normalizers = TR_xml_df.iloc[:TR_number_of_rates, 0].astype(int)
+TR_rates_denormalized = TR_rates.div(normalizers)
+
+TR_data = pd.concat([TR_base_cur, TR_cur_in_scope, TR_effective_dates, TR_rates_denormalized], axis=1)
+
+print(TR_data)
+
+# name of the TR excel file
+TR_title = r"..\Upload_rates\Other Rates\TURKEY_RATES_" + str(TR_effective_date)[:-9] + ".xlsx"
+print(TR_title)
+
+# create the final xlsx
+with pd.ExcelWriter(TR_title, engine="openpyxl") as writer:
+    header.to_excel(writer, index=False, header=False)
+    TR_data.to_excel(writer, index=False, header=False, startrow=2)
+
+#TODO: find date format for TR dates
+format_date_to_excel(TR_title, date_format="")
