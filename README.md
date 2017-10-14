@@ -1,3 +1,2 @@
-# Upload_rates
-A small program that creates an Excel file with specific currency exchange rates.
-An example raw currency file is included.
+# Turkey
+The first country adapted from the second VBA macro (for countries other than MA).
